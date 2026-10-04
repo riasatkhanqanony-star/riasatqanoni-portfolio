@@ -1,0 +1,57 @@
+"use client";
+
+import React, { useState, useEffect } from 'react';
+import { MapPin } from 'lucide-react';
+import { Globe } from './Globe';
+import { GlobeErrorBoundary } from './GlobeErrorBoundary';
+
+interface MapContentProps {
+  theme?: string;
+}
+
+export const MapContent: React.FC<MapContentProps> = ({ theme }) => {
+  const [time, setTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <GlobeErrorBoundary>
+      <div className="relative w-full h-full overflow-hidden">
+        {/* Globe Layer */}
+        <div className="absolute inset-0 z-0">
+          <Globe theme={theme} scale={1.35} />
+        </div>
+
+        {/* Gradient */}
+        <div className="absolute inset-x-0 bottom-0 h-24 bg-linear-to-t from-card/90 to-transparent pointer-events-none z-10" />
+
+        {/* Info Bar */}
+        <div className="absolute bottom-0 left-0 right-0 z-20 p-3 sm:p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-page border border-custom flex items-center justify-center text-main shrink-0 shadow-sm">
+              <MapPin size={16} className="sm:w-5 sm:h-5" strokeWidth={1.5} />
+            </div>
+            <div className="flex flex-col justify-center">
+              <p className="text-[0.55rem] font-bold text-muted uppercase tracking-wider leading-tight mb-0.5">
+                Based in
+              </p>
+              <h3 className="text-sm font-bold text-main leading-tight">
+                Kabul, Afghanistan
+              </h3>
+              <p className="text-xs font-mono font-bold text-muted mt-0.5 tabular-nums leading-tight">
+                {time.toLocaleTimeString('en-IN', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  timeZone: 'Asia/Kolkata'
+                })} IST
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </GlobeErrorBoundary>
+  );
+};
