@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useMemo, useRef, useState } from 'react';
-import { upload } from '@vercel/blob/client';
 import { useRouter } from 'next/navigation';
 import type { Project } from '@/data/siteConfig';
 
@@ -173,16 +172,24 @@ function Field({ name, label, value, onChange }: FieldProps) {
   );
 }
 
-function isBlobUrl(value: string) {
+function mediaUrl(value?: string) {
+  if (!value) return '';
+
   try {
-    const url = new URL(value);
-    return (
-      url.protocol === 'https:' &&
-      url.hostname.toLowerCase().includes('.blob.vercel-storage.com')
-    );
+    const parsed = new URL(value);
+    if (parsed.hostname.toLowerCase().endsWith('.blob.vercel-storage.com')) {
+      const pathname = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
+      return `/api/media?pathname=${encodeURIComponent(pathname)}`;
+    }
   } catch {
-    return false;
+    // Stored value may already be a Blob pathname.
   }
+
+  if (value.startsWith('portfolio/')) {
+    return `/api/media?pathname=${encodeURIComponent(value)}`;
+  }
+
+  return value;
 }
 
 function UploadField({
@@ -210,18 +217,18 @@ function UploadField({
 
     setBusy(true);
     setMessage('Removing…');
-    try {
-      if (isBlobUrl(value)) {
-        const response = await fetch('/api/admin/upload', {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: value }),
-        });
 
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(data.error || 'Unable to remove the file.');
-        }
+    try {
+      const response = await fetch('/api/admin/upload', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: value }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Unable to remove the file.');
       }
 
       onUploaded('');
@@ -240,21 +247,59 @@ function UploadField({
     setMessage('Uploading…');
 
     try {
-      const blob = await upload(file.name, file, {
-        access: 'public',
-        handleUploadUrl: '/api/admin/upload',
-        clientPayload: JSON.stringify({ kind }),
-        multipart: file.size > 4 * 1024 * 1024,
-        onUploadProgress(event) {
-          setProgress(Math.round(event.percentage));
-        },
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('kind', kind);
+
+      const blob = await new Promise<{ pathname: string }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+
+        xhr.open('POST', '/api/admin/upload');
+        xhr.withCredentials = true;
+
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            setProgress(Math.min(99, Math.round((event.loaded / event.total) * 100)));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Network error while uploading.'));
+        xhr.onabort = () => reject(new Error('Upload cancelled.'));
+
+        xhr.onload = () => {
+          let data: any = {};
+
+          try {
+            data = JSON.parse(xhr.responseText || '{}');
+          } catch {
+            // Keep the generic HTTP error below.
+          }
+
+          if (xhr.status >= 200 && xhr.status < 300 && data.pathname) {
+            resolve({ pathname: data.pathname });
+            return;
+          }
+
+          reject(
+            new Error(
+              data.error ||
+                (xhr.status === 413
+                  ? 'File is too large. Maximum size is 4 MB.'
+                  : `Upload failed (${xhr.status || 'network error'}).`)
+            )
+          );
+        };
+
+        xhr.send(formData);
       });
 
       const previous = value;
-      onUploaded(blob.url);
+      const storedValue = `/api/media?pathname=${encodeURIComponent(blob.pathname)}`;
+      onUploaded(storedValue);
+      setProgress(100);
       setMessage('Uploaded successfully');
 
-      if (previous && previous !== blob.url && isBlobUrl(previous)) {
+      if (previous) {
         fetch('/api/admin/upload', {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
@@ -264,10 +309,13 @@ function UploadField({
     } catch (error) {
       console.error(`[upload:${kind}]`, error);
       setMessage(error instanceof Error ? error.message : 'Upload failed');
+      setProgress(0);
     } finally {
       setBusy(false);
     }
   };
+
+  const previewUrl = mediaUrl(value);
 
   return (
     <div className="rounded-2xl border border-custom bg-card-hover p-3.5">
@@ -278,6 +326,7 @@ function UploadField({
           </p>
           <p className="mt-1 text-xs text-muted">{help}</p>
         </div>
+
         <div className="flex flex-wrap gap-2 shrink-0">
           <button
             type="button"
@@ -287,6 +336,7 @@ function UploadField({
           >
             {busy ? `${progress}%` : 'Browse & Upload'}
           </button>
+
           {value && (
             <button
               type="button"
@@ -313,12 +363,12 @@ function UploadField({
         }}
       />
 
-      {value && (
+      {value && previewUrl && (
         <div className="mt-3 rounded-xl border border-custom bg-card p-3">
           {kind !== 'resume' ? (
             <div className="flex items-center gap-3">
               <img
-                src={value}
+                src={previewUrl}
                 alt="Uploaded preview"
                 className="h-16 w-16 rounded-xl object-cover border border-custom"
               />
@@ -328,7 +378,7 @@ function UploadField({
             </div>
           ) : (
             <a
-              href={value}
+              href={previewUrl}
               target="_blank"
               rel="noreferrer"
               className="text-sm font-semibold underline underline-offset-4"

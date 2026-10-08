@@ -15,7 +15,7 @@ import {
 import { ConnectionHub } from "@/components/ConnectionHub";
 import { person } from "@/data/siteConfig";
 import { usePageLoading } from '@/components/PageLoadingContext';
-import { PortfolioProvider } from '@/components/PortfolioContext';
+import { PortfolioProvider, usePortfolio } from '@/components/PortfolioContext';
 
 const MapContent = dynamic(
   () => import("@/components/GlobeClient").then((m) => m.MapContent),
@@ -34,7 +34,7 @@ interface BentoItem {
 
 const BENTO_ITEMS: BentoItem[] = [
   { id: "intro",             colSpan: "col-span-2 lg:col-span-2", mobileOrder: 1 },
-  { id: "photo",             colSpan: "col-span-1 lg:col-span-1", mobileOrder: 2, bgImage: "/profile.jpg" },
+  { id: "photo",             colSpan: "col-span-1 lg:col-span-1", mobileOrder: 2 },
   { id: "socials",           colSpan: "col-span-1 lg:col-span-1", mobileOrder: 3 },
   { id: "about",             colSpan: "col-span-1 lg:col-span-1", mobileOrder: 4,  hasArrow: true, onClickModal: "about" },
   { id: "experience",        colSpan: "col-span-1 lg:col-span-1", mobileOrder: 5,  hasArrow: true, onClickModal: "experience" },
@@ -57,12 +57,35 @@ const itemVariants: Variants = {
   visible: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.3, ease: [0.22, 1, 0.36, 1] } },
 };
 
-export default function HomePage() {
+function mediaUrl(value?: string) {
+  if (!value) return '/profile.jpg';
+
+  try {
+    const parsed = new URL(value);
+    if (parsed.hostname.toLowerCase().endsWith('.blob.vercel-storage.com')) {
+      const pathname = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
+      return `/api/media?pathname=${encodeURIComponent(pathname)}`;
+    }
+  } catch {
+    // Stored value may already be a Blob pathname.
+  }
+
+  if (value.startsWith('portfolio/')) {
+    return `/api/media?pathname=${encodeURIComponent(value)}`;
+  }
+
+  return value;
+}
+
+function PortfolioHomePage() {
   const [activeModal, setActiveModal] = useState<DetailType | null>(null);
   const [isConnectOpen, setIsConnectOpen] = useState(false);
   const { resolvedTheme } = useTheme();
   const router = useRouter();
   const { start } = usePageLoading();
+  const { profile: rawProfile = person } = usePortfolio();
+  const profile: any = rawProfile;
+  const profileImage = mediaUrl(profile.profile_image);
 
   // CRITICAL — hide initial loader as soon as React mounts
   useEffect(() => {
@@ -100,7 +123,7 @@ export default function HomePage() {
   }, [resolvedTheme]);
 
   return (
-    <PortfolioProvider><main className="min-h-screen bg-page">
+    <main className="min-h-screen bg-page">
       <div className="flex flex-col p-3 sm:p-4 md:p-4 md:pt-7 pt-6 sm:pt-8 pb-8">
         <AnimatePresence>
           {activeModal && (
@@ -134,7 +157,7 @@ export default function HomePage() {
                   dataId={item.id}
                   className="h-full w-full"
                   title={NO_TITLE_CARDS.has(item.id) ? undefined : item.id}
-                  backgroundImage={item.bgImage}
+                  backgroundImage={item.id === 'photo' ? profileImage : item.bgImage}
                   hasArrow={item.hasArrow}
                   isVisible={activeModal !== item.id}
                   noPadding={item.noPadding}
@@ -155,6 +178,14 @@ export default function HomePage() {
           </footer>
         </div>
       </div>
-      </main></PortfolioProvider>
+      </main>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <PortfolioProvider>
+      <PortfolioHomePage />
+    </PortfolioProvider>
   );
 }

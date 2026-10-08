@@ -6,13 +6,33 @@ import { X, Github, Linkedin, Mail, Send, ArrowUpRight, Terminal, FileText, Copy
 import { person, projects as staticProjects } from '@/data/siteConfig';
 import { usePortfolio } from '@/components/PortfolioContext';
 
+function mediaUrl(value?: string) {
+  if (!value) return '';
+
+  try {
+    const parsed = new URL(value);
+    if (parsed.hostname.toLowerCase().endsWith('.blob.vercel-storage.com')) {
+      const pathname = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
+      return `/api/media?pathname=${encodeURIComponent(pathname)}`;
+    }
+  } catch {
+    // Stored value may already be a Blob pathname.
+  }
+
+  if (value.startsWith('portfolio/')) {
+    return `/api/media?pathname=${encodeURIComponent(value)}`;
+  }
+
+  return value;
+}
+
 export const ConnectionHub = ({ onClose, layoutId }: { onClose: () => void; layoutId?: string }) => {
   const { profile: rawProfile = person, socials = [], projects = staticProjects } = usePortfolio();
   const profile: any = rawProfile;
   const getSocial = (platform: string) => socials.find((x: any) => String(x.platform || '').toLowerCase() === platform)?.url || '';
   const github = getSocial('github');
   const linkedin = getSocial('linkedin');
-  const resumeUrl = profile.resume_url || '';
+  const resumeUrl = mediaUrl(profile.resume_url);
   const [time, setTime] = useState(() =>
     new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
   );
